@@ -138,6 +138,7 @@ LABELS=()
 
 PROJECT_ID=""
 PROJECT_TITLE=""
+PROJECT_FIELDS_CACHE=""
 
 STATUS_FIELD_ID=""
 STATUS_OPTION_ID=""
@@ -525,73 +526,44 @@ resolve_repository() {
 
 # @purpose: Validate the GitHub Project and resolve its internal ID and title.
 validate_project() {
-    local resolved_id
-    local resolved_title
+    local project_metadata
 
-    resolved_id=""
-    resolved_title=""
+    project_metadata=""
 
-    if ! resolved_id=$(
+    if ! project_metadata=$(
         gh project view "${PROJECT_NUMBER}" \
             --owner "${PROJECT_OWNER}" \
             --format json \
-            --jq '.id'
+            --jq '[.id, .title] | @tsv'
     ); then
         log_error "Project '${PROJECT_OWNER}/${PROJECT_NUMBER}' was not found or is not accessible."
         log_warn "If Projects access is missing, run: gh auth refresh -s project"
         exit 6
     fi
 
-    if ! resolved_title=$(
-        gh project view "${PROJECT_NUMBER}" \
+    IFS=$'\t' read -r PROJECT_ID PROJECT_TITLE <<< "${project_metadata}"
+
+    [[ -n "${PROJECT_ID}" ]] || die 6 "Project internal ID is empty."
+}
+
+# @purpose: Load supported Project field IDs and option IDs once per execution.
+load_project_fields() {
+    if ! PROJECT_FIELDS_CACHE=$(
+        gh project field-list "${PROJECT_NUMBER}" \
             --owner "${PROJECT_OWNER}" \
             --format json \
-            --jq '.title'
+            --jq '
+                .fields[]
+                | select(.name == "Status" or .name == "Priority" or .name == "Type")
+                | . as $field
+                | ([$field.name, $field.id, $field.type, "", ""] | @tsv),
+                  ($field.options[]? | [$field.name, $field.id, $field.type, .id, .name] | @tsv)
+            '
     ); then
-        log_error "Could not read Project '${PROJECT_OWNER}/${PROJECT_NUMBER}'."
+        log_error "Could not list fields for Project '${PROJECT_OWNER}/${PROJECT_NUMBER}'."
         log_warn "If Projects access is missing, run: gh auth refresh -s project"
         exit 6
     fi
-
-    [[ -n "${resolved_id}" ]] || die 6 "Project internal ID is empty."
-
-    PROJECT_ID="${resolved_id}"
-    PROJECT_TITLE="${resolved_title}"
-}
-
-# @purpose: Return gh --jq expressions for a supported Project field.
-# @param $1 [Req]: Project field name.
-# @param $2 [Req]: Query type: metadata or options.
-field_jq_expression() {
-    local field_name
-    local query_type
-
-    field_name=$1
-    query_type=$2
-
-    case "${field_name}:${query_type}" in
-        Status:metadata)
-            printf '%s' '.fields[] | select(.name == "Status") | [.id, .type] | @tsv'
-            ;;
-        Status:options)
-            printf '%s' '.fields[] | select(.name == "Status") | .options[]? | [.id, .name] | @tsv'
-            ;;
-        Priority:metadata)
-            printf '%s' '.fields[] | select(.name == "Priority") | [.id, .type] | @tsv'
-            ;;
-        Priority:options)
-            printf '%s' '.fields[] | select(.name == "Priority") | .options[]? | [.id, .name] | @tsv'
-            ;;
-        Type:metadata)
-            printf '%s' '.fields[] | select(.name == "Type") | [.id, .type] | @tsv'
-            ;;
-        Type:options)
-            printf '%s' '.fields[] | select(.name == "Type") | .options[]? | [.id, .name] | @tsv'
-            ;;
-        *)
-            die 1 "Internal error: unsupported Project field query '${field_name}:${query_type}'."
-            ;;
-    esac
 }
 
 # @purpose: Validate a Project field and resolve the requested single-select option.
@@ -600,12 +572,11 @@ field_jq_expression() {
 validate_project_field() {
     local field_name
     local field_value
-    local metadata_query
-    local options_query
-    local metadata
-    local options
     local field_id
     local field_type
+    local candidate_field_name
+    local candidate_field_id
+    local candidate_field_type
     local candidate_id
     local candidate_name
     local option_id
@@ -613,60 +584,29 @@ validate_project_field() {
 
     field_name=$1
     field_value=$2
-    metadata_query=""
-    options_query=""
-    metadata=""
-    options=""
     field_id=""
     field_type=""
+    candidate_field_name=""
+    candidate_field_id=""
+    candidate_field_type=""
     candidate_id=""
     candidate_name=""
     option_id=""
     available_values=""
 
-    metadata_query=$(field_jq_expression "${field_name}" "metadata")
+    while IFS=$'\t' read -r \
+        candidate_field_name \
+        candidate_field_id \
+        candidate_field_type \
+        candidate_id \
+        candidate_name; do
+        [[ "${candidate_field_name}" == "${field_name}" ]] || continue
 
-    if ! metadata=$(
-        gh project field-list "${PROJECT_NUMBER}" \
-            --owner "${PROJECT_OWNER}" \
-            --format json \
-            --jq "${metadata_query}"
-    ); then
-        log_error "Could not list fields for Project '${PROJECT_OWNER}/${PROJECT_NUMBER}'."
-        log_warn "If Projects access is missing, run: gh auth refresh -s project"
-        exit 6
-    fi
+        if [[ -z "${field_id}" ]]; then
+            field_id="${candidate_field_id}"
+            field_type="${candidate_field_type}"
+        fi
 
-    if [[ -z "${metadata}" ]]; then
-        log_error "Project field '${field_name}' does not exist."
-        exit 9
-    fi
-
-    IFS=$'\t' read -r field_id field_type <<< "${metadata}"
-
-    case "${field_type}" in
-        SINGLE_SELECT|SingleSelect|ProjectV2SingleSelectField)
-            ;;
-        *)
-            log_error "Project field '${field_name}' is not a SINGLE_SELECT field."
-            printf 'Detected field type: %s\n' "${field_type}" >&2
-            exit 11
-            ;;
-    esac
-
-    options_query=$(field_jq_expression "${field_name}" "options")
-
-    if ! options=$(
-        gh project field-list "${PROJECT_NUMBER}" \
-            --owner "${PROJECT_OWNER}" \
-            --format json \
-            --jq "${options_query}"
-    ); then
-        log_error "Could not read options for Project field '${field_name}'."
-        exit 6
-    fi
-
-    while IFS=$'\t' read -r candidate_id candidate_name; do
         [[ -n "${candidate_id}" ]] || continue
 
         if [[ -n "${available_values}" ]]; then
@@ -678,7 +618,22 @@ validate_project_field() {
         if [[ "${candidate_name}" == "${field_value}" ]]; then
             option_id="${candidate_id}"
         fi
-    done <<< "${options}"
+    done <<< "${PROJECT_FIELDS_CACHE}"
+
+    if [[ -z "${field_id}" ]]; then
+        log_error "Project field '${field_name}' does not exist."
+        exit 9
+    fi
+
+    case "${field_type}" in
+        SINGLE_SELECT|SingleSelect|ProjectV2SingleSelectField)
+            ;;
+        *)
+            log_error "Project field '${field_name}' is not a SINGLE_SELECT field."
+            printf 'Detected field type: %s\n' "${field_type}" >&2
+            exit 11
+            ;;
+    esac
 
     if [[ -z "${option_id}" ]]; then
         log_error "Invalid value '${field_value}' for field '${field_name}'."
@@ -1039,6 +994,7 @@ main() {
     check_auth
     resolve_repository
     validate_project
+    load_project_fields
     validate_requested_fields
     check_duplicate_issue
 

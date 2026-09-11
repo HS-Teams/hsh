@@ -41,6 +41,7 @@ Commands:
   create, new    Create a card using create-card.sh.
   move, mv       Move a card using move-card.sh.
   open, web      Open the GitHub Project in the browser.
+  rates          Check the API limits and rates.
 
 Options:
   -h, --help     Display this help message and exit.
@@ -54,6 +55,7 @@ Examples:
   cards.sh move --issue 12 --next
   cards.sh move --issue 12 --status Done
   cards.sh open
+  cards.sh rates
 
 Run:
   cards.sh <command> --help
@@ -639,6 +641,25 @@ command_open()
     fi
 }
 
+# @purpose: Consult the actual GitHub API limit.
+command_rates()
+{
+    local rates limit remaining reset used
+
+    rates=$(gh api rate_limit --jq '.resources.graphql')
+    limit="$(printf '%s' "${rates}" | jq -r '.limit')"
+    remaining="$(printf '%s' "${rates}" | jq -r '.remaining')"
+    reset="$(printf '%s' "${rates}" | jq -r '.reset')"
+    used="$(printf '%s' "${rates}" | jq -r '.used')"
+    
+    printf '\n\033[34mLimit:\033[m %s\n\033[34mUsage:\033[m %s/%s\n\033[34mReset:\033[m %s\n' \
+        "$limit" \
+        "$used" \
+        "$remaining" \
+        "$(date -r "$reset")"
+    return 0
+}
+
 # @purpose: Dispatch cards.sh subcommands.
 # @param $1..$N [Opt] : Command and command-specific arguments.
 main()
@@ -669,6 +690,9 @@ main()
             ;;
         open|web)
             command_open "$@"
+            ;;
+        rates)
+            command_rates "$@"
             ;;
         help)
             usage
