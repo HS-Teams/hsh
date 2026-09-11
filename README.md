@@ -245,7 +245,12 @@ Because hsh is derived from Bash, modifications to the Bash-derived portion must
 
 Third-party Rust crates, provider SDKs, and other dependencies retain their respective licenses.
 
-See the repository licensing and provenance documentation before distributing binaries.
+Before distributing binaries, read the versioned
+[`license and provenance record`](doc/licensing/PROVENANCE.md) and complete the
+[`pre-distribution checklist`](doc/licensing/DISTRIBUTION_CHECKLIST.md). Public
+or commercial binary distribution remains blocked until a release-specific
+checklist passes `scripts/check-distribution-readiness.sh` and receives the
+required legal review.
 
 ## Project status
 
