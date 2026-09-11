@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
+set -e
 set -u
+set -o pipefail
 
-source .envrc
-[[ -n "$ORG" || -n "$REPO" ]] || { echo -e "\033[31mUnable to source '.enrvc'!\033[m"; exit 1; }
+[[ -f .envrc ]] && source .envrc
+[[ -n "${REPO:-}" ]] || { echo -e "\033[31mUnable to source '.envrc'!\033[m"; exit 1; }
 
 assign_milestone() {
   local milestone="$1"

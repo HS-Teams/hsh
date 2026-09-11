@@ -2,8 +2,7 @@
 
 set -u
 
-source .envrc
-[[ -n "${ORG}" ]] || { echo -e "\033[31mUnable to source '.enrvc'!\033[m"; exit 1; }
+[[ -f .envrc ]] && source .envrc
 
 CARDS_BIN="${CARDS_BIN:-}"
 STATUS="${HSH_M5_STATUS:-Todo}"

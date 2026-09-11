@@ -2,10 +2,9 @@
 
 set -u
 
-source .envrc
-[[ -n "${ORG}" ]] || { echo -e "\033[31mUnable to source '.enrvc'!\033[m"; exit 1; }
+[[ -f .envrc ]] && source .envrc
 
-CREATE_CARD_BIN="${CREATE_CARD_BIN:-./create-card.sh}"
+CREATE_CARD_BIN="${CREATE_CARD_BIN:-}"
 STATUS="${HSH_M0_STATUS:-Backlog}"
 MILESTONE="${HSH_M0_MILESTONE:-}"
 ASSIGNEE="${HSH_M0_ASSIGNEE:-}"
@@ -19,7 +18,7 @@ Usage:
   create-m0-cards.sh [--dry-run]
 
 Environment:
-  CREATE_CARD_BIN       Path to create-card.sh. Default: ./create-card.sh
+  CREATE_CARD_BIN       Optional path to create-card.sh.
   HSH_M0_STATUS         Project status. Default: Backlog
   HSH_M0_MILESTONE      Optional GitHub milestone name.
   HSH_M0_ASSIGNEE       Optional assignee, e.g. @me.
@@ -53,6 +52,14 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+
+if [ -z "$CREATE_CARD_BIN" ]; then
+  script_dir="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
+
+  if [ -x "$script_dir/create-card.sh" ]; then
+    CREATE_CARD_BIN="$script_dir/create-card.sh"
+  fi
+fi
 
 if [ ! -x "$CREATE_CARD_BIN" ]; then
   if command -v create-card.sh >/dev/null 2>&1; then

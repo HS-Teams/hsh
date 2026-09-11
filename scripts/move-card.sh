@@ -15,7 +15,11 @@
 # | This program comes with NO WARRANTY, to the extent permitted by law.         |
 # +------------------------------------------------------------------------------+
 
+set -e
 set -u
+set -o pipefail
+
+[[ -f .envrc ]] && source .envrc
 
 SCRIPT_NAME='move-card.sh'
 

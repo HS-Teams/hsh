@@ -15,7 +15,11 @@
 # | This program comes with NO WARRANTY, to the extent permitted by law.         |
 # +------------------------------------------------------------------------------+
 
+set -e
 set -u
+set -o pipefail
+
+[[ -f .envrc ]] && source .envrc
 
 # https://semver.org/; major.minor.patch
 VERSION="1.0.0"
@@ -26,10 +30,6 @@ GH_CARD_PROJECT_OWNER="${GH_CARD_PROJECT_OWNER:-HS-Teams}"
 CREATE_CARD_BIN="${CREATE_CARD_BIN:-}"
 MOVE_CARD_BIN="${MOVE_CARD_BIN:-}"
 ITEM_LIMIT="10000"
-
-export GH_CARD_REPO
-export GH_CARD_PROJECT
-export GH_CARD_PROJECT_OWNER
 
 USAGE='Usage:
   cards.sh <command> [OPTIONS]
@@ -645,18 +645,26 @@ command_open()
 command_rates()
 {
     local rates limit remaining reset used
+    local reset_at
 
     rates=$(gh api rate_limit --jq '.resources.graphql')
     limit="$(printf '%s' "${rates}" | jq -r '.limit')"
     remaining="$(printf '%s' "${rates}" | jq -r '.remaining')"
     reset="$(printf '%s' "${rates}" | jq -r '.reset')"
     used="$(printf '%s' "${rates}" | jq -r '.used')"
-    
-    printf '\n\033[34mLimit:\033[m %s\n\033[34mUsage:\033[m %s/%s\n\033[34mReset:\033[m %s\n' \
+
+    if reset_at="$(date -r "${reset}" 2>/dev/null)"; then
+        :
+    else
+        reset_at="$(date -d "@${reset}")"
+    fi
+
+    printf '\n\033[34mLimit:\033[m %s\n\033[34mUsage:\033[m %s/%s\n\033[34mRemaining:\033[m %s\n\033[34mReset:\033[m %s\n' \
         "$limit" \
         "$used" \
+        "$limit" \
         "$remaining" \
-        "$(date -r "$reset")"
+        "$reset_at"
     return 0
 }
 

@@ -19,6 +19,8 @@ set -e
 set -u
 set -o pipefail
 
+[[ -f .envrc ]] && source .envrc
+
 SCRIPT_NAME="create-card.sh"
 
 # https://semver.org/; major.minor.patch
